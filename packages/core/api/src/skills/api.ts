@@ -16,6 +16,7 @@ import {
   Owner,
   SkillName,
   SkillNotFoundError,
+  SkillSourceError,
 } from "@executor-js/sdk/shared";
 
 const SkillParams = { owner: Owner, name: SkillName };
@@ -58,6 +59,27 @@ const SaveSkillPayload = Schema.Struct({
   files: Schema.Array(SkillFileInputSchema),
 });
 
+/** What the user pasted: a GitHub repo, a path inside one, or a skills.sh link. */
+const ImportSkillsPayload = Schema.Struct({
+  source: Schema.String,
+});
+
+/** One skill found at the source, validated, with its files ready to save. */
+const ImportedSkillCandidate = Schema.Struct({
+  directory: Schema.String,
+  name: SkillName,
+  description: Schema.String,
+  files: Schema.Array(SkillFileInputSchema),
+});
+
+export const ImportSkillsResponse = Schema.Struct({
+  source: Schema.String,
+  ref: Schema.String,
+  skills: Schema.Array(ImportedSkillCandidate),
+  rejected: Schema.Array(Schema.Struct({ directory: Schema.String, reason: Schema.String })),
+  truncated: Schema.Boolean,
+});
+
 export const SkillsApi = HttpApiGroup.make("skills")
   .add(
     HttpApiEndpoint.get("list", "/skills", {
@@ -77,6 +99,15 @@ export const SkillsApi = HttpApiGroup.make("skills")
       payload: SaveSkillPayload,
       success: SkillResponse,
       error: [InternalError, InvalidSkillError, OrgWriteDeniedError],
+    }),
+  )
+  .add(
+    // Read-only: fetches the repository and returns candidates. Saving what the
+    // user picks goes through `save`, so import never writes on its own.
+    HttpApiEndpoint.post("import", "/skills/import", {
+      payload: ImportSkillsPayload,
+      success: ImportSkillsResponse,
+      error: [InternalError, SkillSourceError],
     }),
   )
   .add(

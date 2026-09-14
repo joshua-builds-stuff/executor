@@ -69,6 +69,7 @@ export {
   ArtifactNotFoundError,
   SkillNotFoundError,
   InvalidSkillError,
+  SkillSourceError,
   isUserActionableError,
   type ExecuteError,
   type ExecutorError,
@@ -137,6 +138,11 @@ export {
   SKILL_RESERVED_NAMES,
   SKILL_URI_SCHEME,
 } from "./skill";
+export {
+  parseGitHubSkillSource,
+  formatGitHubSkillSource,
+  type GitHubSkillSource,
+} from "./skill-source";
 export type {
   Skill,
   SkillSummary,

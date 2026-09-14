@@ -315,6 +315,10 @@ export const saveSkill = ExecutorApiClient.mutation("skills", "save");
 
 export const removeSkill = ExecutorApiClient.mutation("skills", "remove");
 
+/** Read-only: lists the skills found at a GitHub URL. Saving is a separate
+ *  `saveSkill` per pick, so this carries no reactivity keys of its own. */
+export const importSkills = ExecutorApiClient.mutation("skills", "import");
+
 export const resumeExecution = ExecutorApiClient.mutation("executions", "resume");
 
 /** Run codemode source (`POST /executions`). Used by the per-tool Run/Test panel

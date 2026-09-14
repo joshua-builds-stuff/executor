@@ -316,6 +316,27 @@ export class InvalidSkillError
   }
 }
 
+/** A skill import by URL could not be served: the URL is not a GitHub or
+ *  skills.sh location, the repository or path does not exist, GitHub refused
+ *  or rate-limited the request, or nothing under the path is a skill. */
+export class SkillSourceError
+  extends Schema.TaggedErrorClass<SkillSourceError>()(
+    "SkillSourceError",
+    { reason: Schema.String },
+    { httpApiStatus: 400 },
+  )
+  implements UserActionableError
+{
+  readonly __executorUserActionable = true;
+  readonly code = "skill_source";
+  get userMessage(): string {
+    return this.reason;
+  }
+  override get message(): string {
+    return `Skill import failed: ${this.reason}`;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Union — the failure channel of `execute`.
 // ---------------------------------------------------------------------------
