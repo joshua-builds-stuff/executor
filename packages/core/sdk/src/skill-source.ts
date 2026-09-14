@@ -17,6 +17,9 @@ export interface GitHubSkillSource {
   readonly ref: string | null;
   /** Directory inside the repo to scan, `""` for the root. */
   readonly path: string;
+  /** Only skills with these names, when the input named some (`--skill x`).
+   *  Empty means every skill found. */
+  readonly skills: readonly string[];
 }
 
 const GITHUB_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -44,8 +47,69 @@ const cleanPath = (segments: readonly string[]): string =>
  * else — another host, an owner-only URL, a path with `..` — is `None`, and the
  * caller tells the user what is accepted rather than guessing.
  */
+/**
+ * Pull the location and any `--skill` names out of a pasted install command.
+ *
+ * skills.sh shows `npx skills add <source> --skill <name>`; `gh skill install`,
+ * `skillshare install`, and `bunx`/`pnpx` variants have the same shape. The
+ * location is the first token that is not a command word or a flag; every
+ * `--skill`/`-s` value (space- or `=`-separated, comma lists allowed) narrows
+ * the import to those names.
+ */
+const splitCommand = (
+  input: string,
+): { readonly location: string; readonly skills: readonly string[] } => {
+  const tokens = input.split(/\s+/).filter((token) => token !== "");
+  const commandWords = new Set([
+    "npx",
+    "bunx",
+    "pnpx",
+    "pnpm",
+    "yarn",
+    "bun",
+    "npm",
+    "dlx",
+    "x",
+    "skills",
+    "skill",
+    "skillshare",
+    "gh",
+    "add",
+    "install",
+    "i",
+    "-y",
+    "--yes",
+  ]);
+  const skills: string[] = [];
+  let location: string | null = null;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (token === "--skill" || token === "-s" || token === "--skills") {
+      const value = tokens[index + 1];
+      if (value !== undefined && !value.startsWith("-")) {
+        skills.push(...value.split(","));
+        index += 1;
+      }
+      continue;
+    }
+    const inline = /^--skills?=(.+)$/.exec(token);
+    if (inline?.[1]) {
+      skills.push(...inline[1].split(","));
+      continue;
+    }
+    if (token.startsWith("-")) continue;
+    if (commandWords.has(token.toLowerCase())) continue;
+    if (location === null) location = token;
+  }
+  return {
+    location: location ?? "",
+    skills: skills.map((name) => name.trim()).filter((name) => name !== ""),
+  };
+};
+
 export const parseGitHubSkillSource = (input: string): Option.Option<GitHubSkillSource> => {
-  const trimmed = input.trim();
+  const { location, skills } = splitCommand(input.trim());
+  const trimmed = location.replace(/^["']|["']$/g, "");
   if (trimmed === "") return Option.none();
 
   let segments: string[];
@@ -92,7 +156,7 @@ export const parseGitHubSkillSource = (input: string): Option.Option<GitHubSkill
     }
   }
   if (pathSegments.some((segment) => segment === "." || segment === "..")) return Option.none();
-  return Option.some({ owner, repo, ref, path: cleanPath(pathSegments) });
+  return Option.some({ owner, repo, ref, path: cleanPath(pathSegments), skills });
 };
 
 /** The canonical `owner/repo[@ref][/path]` label for a resolved source. */

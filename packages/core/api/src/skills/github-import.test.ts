@@ -118,6 +118,22 @@ describe("importSkillsFromGitHub", () => {
     expect(result.success.rejected.map((r) => r.directory)).toEqual(["skills/broken"]);
   });
 
+  it("narrows to the names a pasted `--skill` flag asked for", async () => {
+    const files = {
+      "skills/pdf/SKILL.md": valid,
+      "skills/csv/SKILL.md": valid.replace("name: pdf", "name: csv"),
+    };
+    const result = await run(files, "npx skills add acme/skills --skill csv");
+    expect(Result.isSuccess(result)).toBe(true);
+    if (Result.isFailure(result)) return;
+    expect(result.success.skills.map((s) => s.name)).toEqual(["csv"]);
+
+    const missing = await run(files, "npx skills add acme/skills --skill nope");
+    expect(Result.isFailure(missing)).toBe(true);
+    if (Result.isSuccess(missing)) return;
+    expect(missing.failure.reason).toContain("No skill named `nope`");
+  });
+
   it("fails with a reason when the repo has no skills", async () => {
     const result = await run({ "README.md": "# repo" }, "acme/skills");
     expect(Result.isFailure(result)).toBe(true);
