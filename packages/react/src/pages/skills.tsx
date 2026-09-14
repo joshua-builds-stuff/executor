@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
+import { toast } from "sonner";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import type { Owner } from "@executor-js/sdk/shared";
 
@@ -12,6 +14,7 @@ import { isAsyncResultLoading } from "../lib/async-result";
 import { useExecutorDocumentTitle } from "../lib/document-title";
 import { formatRelativeTime } from "../lib/relative-time";
 import { connectionOwnerOptionsForHost } from "../plugins/connection-owner";
+import { SkillImportDialog } from "./skill-import-dialog";
 
 /** The wire row `skills.list` returns — the manifest, without file contents. */
 interface SkillSummaryRow {
@@ -104,6 +107,7 @@ export function SkillsPage() {
   useExecutorDocumentTitle("Skills");
   const skills = useAtomValue(skillsAtom);
   const refresh = useAtomRefresh(skillsAtom);
+  const [importing, setImporting] = useState(false);
 
   return (
     <PageContainer>
@@ -111,11 +115,29 @@ export function SkillsPage() {
         title="Skills"
         description="SKILL.md instructions your agents can load on demand. Save one here and every agent connected to this workspace discovers it — personally, or shared with everyone."
         actions={
-          <Button asChild size="sm">
-            <Link to="/{-$orgSlug}/skills/new">Add Skill</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setImporting(true)}>
+              Import from GitHub
+            </Button>
+            <Button asChild size="sm">
+              <Link to="/{-$orgSlug}/skills/new">Add Skill</Link>
+            </Button>
+          </div>
         }
       />
+      {importing ? (
+        <SkillImportDialog
+          onClose={() => setImporting(false)}
+          onImported={(saved) => {
+            refresh();
+            toast.success(
+              saved.length === 1
+                ? `Imported ${saved[0]?.name ?? "skill"}`
+                : `Imported ${saved.length} skills`,
+            );
+          }}
+        />
+      ) : null}
 
       {isAsyncResultLoading(skills) ? (
         <LoadingState />

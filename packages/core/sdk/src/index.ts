@@ -84,6 +84,7 @@ export {
   ArtifactNotFoundError,
   SkillNotFoundError,
   InvalidSkillError,
+  SkillSourceError,
   isUserActionableError,
   type ExecuteError,
   type ExecutorError,
@@ -254,6 +255,11 @@ export {
   type ParsedSkillMarkdown,
   type ParsedSkillUri,
 } from "./skill";
+export {
+  parseGitHubSkillSource,
+  formatGitHubSkillSource,
+  type GitHubSkillSource,
+} from "./skill-source";
 
 // Elicitation.
 export {
