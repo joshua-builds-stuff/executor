@@ -8,6 +8,7 @@ import {
   IntegrationSlug,
   Owner,
   ProviderKey,
+  SkillName,
   ToolAddress,
 } from "./ids";
 
@@ -280,6 +281,42 @@ export class ArtifactNotFoundError extends Schema.TaggedErrorClass<ArtifactNotFo
 }
 
 // ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+/** No skill with this owner + name is visible to the bound owner scope. */
+export class SkillNotFoundError extends Schema.TaggedErrorClass<SkillNotFoundError>()(
+  "SkillNotFoundError",
+  { owner: Owner, name: SkillName },
+  { httpApiStatus: 404 },
+) {
+  override get message(): string {
+    return `Skill not found: ${this.owner}/${this.name}`;
+  }
+}
+
+/** The uploaded skill does not conform to the Agent Skills specification (bad
+ *  frontmatter, an invalid name, a missing SKILL.md, a file path outside the
+ *  skill, or a size over the limit). `reason` is written for the author. */
+export class InvalidSkillError
+  extends Schema.TaggedErrorClass<InvalidSkillError>()(
+    "InvalidSkillError",
+    { reason: Schema.String },
+    { httpApiStatus: 400 },
+  )
+  implements UserActionableError
+{
+  readonly __executorUserActionable = true;
+  readonly code = "invalid_skill";
+  get userMessage(): string {
+    return this.reason;
+  }
+  override get message(): string {
+    return `Invalid skill: ${this.reason}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Union — the failure channel of `execute`.
 // ---------------------------------------------------------------------------
 
@@ -302,4 +339,6 @@ export type ExecuteError =
 export type ExecutorError =
   | ExecuteError
   | IntegrationRemovalNotAllowedError
-  | ArtifactNotFoundError;
+  | ArtifactNotFoundError
+  | SkillNotFoundError
+  | InvalidSkillError;

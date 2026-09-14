@@ -37,6 +37,7 @@ import {
   oauth_client,
   oauth_session,
   plugin_storage,
+  skill,
   subject,
   tool,
   tool_policy,
@@ -159,6 +160,18 @@ const seedTenant = async (db: DrizzleDb, tenant: string, tag: string) => {
     subject: "s",
   });
 
+  await db.insert(skill).values({
+    name: `skill-${tag}`,
+    description: "House style",
+    frontmatter: { name: `skill-${tag}`, description: "House style" },
+    files: [],
+    created_at: now,
+    updated_at: now,
+    tenant,
+    owner: "o",
+    subject: "s",
+  });
+
   const orgNs = `o:${tenant}/plugin`;
   const userNs = `u:${tenant}:subject/plugin`;
   await db.insert(blob).values({
@@ -186,6 +199,7 @@ const TENANT_TABLES = [
   plugin_storage,
   subject,
   artifact,
+  skill,
 ] as const;
 
 // Tables that are NOT purged by org id, each with the reason it is exempt. Any

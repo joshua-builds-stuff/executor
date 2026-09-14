@@ -59,6 +59,7 @@ export {
   ElicitationId,
   PolicyId,
   ArtifactId,
+  SkillName,
   Tenant,
   Subject,
   Owner,
@@ -81,6 +82,8 @@ export {
   CredentialProviderNotRegisteredError,
   CredentialResolutionError,
   ArtifactNotFoundError,
+  SkillNotFoundError,
+  InvalidSkillError,
   isUserActionableError,
   type ExecuteError,
   type ExecutorError,
@@ -222,6 +225,35 @@ export {
   type SetArtifactPreviewInput,
 } from "./artifact";
 export { sanitizeArtifactPreviewMarkup, ARTIFACT_PREVIEW_MARKUP_LIMIT } from "./artifact-preview";
+
+// Agent Skills — SKILL.md directories saved to the workspace.
+export {
+  rowToSkill,
+  toSkillSummary,
+  parseSkillMarkdown,
+  prepareSkillFiles,
+  digestSkillContent,
+  skillBody,
+  skillRootUri,
+  skillFileUri,
+  parseSkillUri,
+  isValidSkillName,
+  isValidSkillFilePath,
+  SKILL_MD_PATH,
+  SKILL_MAX_FILES,
+  SKILL_MAX_TOTAL_BYTES,
+  SKILL_RESERVED_NAMES,
+  SKILL_URI_SCHEME,
+  type Skill,
+  type SkillSummary,
+  type SkillFile,
+  type SkillFileEntry,
+  type SkillFileInput,
+  type SkillRef,
+  type SaveSkillInput,
+  type ParsedSkillMarkdown,
+  type ParsedSkillUri,
+} from "./skill";
 
 // Elicitation.
 export {

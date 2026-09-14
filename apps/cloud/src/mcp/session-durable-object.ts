@@ -383,6 +383,7 @@ export class McpSessionDOSqlite extends McpAgentSessionDOBase<Env, CloudSessionD
         engine,
         description,
         artifacts: executor.artifacts,
+        skills: executor.skills,
         connections: executor.connections,
         tools: executor.tools,
         integrations: executor.integrations,
