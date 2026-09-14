@@ -144,8 +144,9 @@ export function SkillImportDialog(props: {
         <DialogHeader>
           <DialogTitle>Import from GitHub</DialogTitle>
           <DialogDescription>
-            Paste a repository, a folder inside one, or a skills.sh link. Every SKILL.md found there
-            is listed; pick the ones to save.
+            Paste a repository, a folder inside one, a skills.sh link, or the{" "}
+            <span className="font-mono">npx skills add …</span> command a skill page shows. Every
+            SKILL.md found there is listed; pick the ones to save.
           </DialogDescription>
         </DialogHeader>
 
@@ -159,7 +160,7 @@ export function SkillImportDialog(props: {
                 value={source}
                 autoFocus
                 spellCheck={false}
-                placeholder="owner/repo, github.com/owner/repo/tree/main/skills, or skills.sh/…"
+                placeholder="owner/repo, a github.com URL, or npx skills add … --skill name"
                 className="font-mono text-[12px]"
                 onChange={(event) => setSource(event.target.value)}
                 onKeyDown={(event) => {

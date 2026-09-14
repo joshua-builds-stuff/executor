@@ -290,11 +290,25 @@ export const importSkillsFromGitHub = (
       });
 
     const outcomes = yield* Effect.forEach(chosen, readSkill, { concurrency: 3 });
+    // `--skill x` names the skills wanted; the rest are read but not offered.
+    // Matching is by frontmatter name, then by directory basename, so a name
+    // that only exists on disk still resolves.
+    const wanted = new Set(source.skills);
+    const isWanted = (outcome: { readonly directory: string; readonly name?: string }) =>
+      wanted.size === 0 ||
+      (outcome.name !== undefined && wanted.has(outcome.name)) ||
+      wanted.has(outcome.directory.slice(outcome.directory.lastIndexOf("/") + 1));
     const skills: GitHubSkillCandidate[] = [];
     const rejected: { directory: string; reason: string }[] = [];
     for (const outcome of outcomes) {
+      if (!isWanted(outcome)) continue;
       if ("reason" in outcome) rejected.push(outcome);
       else skills.push(outcome);
+    }
+    if (wanted.size > 0 && skills.length === 0 && rejected.length === 0) {
+      return yield* fail(
+        `No skill named ${[...wanted].map((name) => `\`${name}\``).join(", ")} in ${label}.`,
+      );
     }
     return { source: label, ref, skills, rejected, truncated };
   }).pipe(Effect.withSpan("skills.import.github"));
@@ -306,7 +320,7 @@ export const parsedSourceOrError = (
   Option.match(parsed, {
     onNone: () =>
       fail(
-        "Enter a GitHub repository (owner/repo), a path inside one, a github.com URL, or a skills.sh link.",
+        "Enter a GitHub repository (owner/repo), a path inside one, a github.com URL, a skills.sh link, or an `npx skills add …` command.",
       ),
     onSome: Effect.succeed,
   });
