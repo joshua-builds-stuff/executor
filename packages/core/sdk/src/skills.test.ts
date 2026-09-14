@@ -50,6 +50,15 @@ describe("parseSkillMarkdown", () => {
     expect(parsed.success.body.startsWith("# PDF processing")).toBe(true);
   });
 
+  it("accepts an unquoted colon in a scalar value, as lenient clients do", () => {
+    const parsed = parseSkillMarkdown(
+      "---\nname: pdf\ndescription: Use when: the user asks about PDFs\nmetadata:\n  note: a: b\n---\nBody",
+    );
+    expect(Result.isSuccess(parsed)).toBe(true);
+    if (Result.isFailure(parsed)) return;
+    expect(parsed.success.description).toBe("Use when: the user asks about PDFs");
+  });
+
   it.each([
     ["no frontmatter", "# Just markdown"],
     ["unclosed frontmatter", "---\nname: x\ndescription: y\n"],

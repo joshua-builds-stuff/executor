@@ -130,6 +130,50 @@ const splitFrontmatter = (
   });
 };
 
+const tryYaml = (text: string): Result.Result<unknown, InvalidSkillError> =>
+  Result.try({
+    try: () => parseYaml(text) as unknown,
+    catch: () => new InvalidSkillError({ reason: "SKILL.md frontmatter is not valid YAML." }),
+  });
+
+/**
+ * Quote the value of every top-level `key: value` line whose value contains
+ * a colon and is not already quoted or a block scalar. The most common
+ * frontmatter authored for other clients is technically invalid YAML —
+ * `description: Use when: the user asks about PDFs` — and their parsers
+ * happen to accept it. Rewriting only unquoted scalar values keeps nested
+ * mappings (`metadata:`) and block scalars (`description: >`) untouched.
+ */
+const quoteUnquotedScalars = (yaml: string): string =>
+  yaml
+    .split("\n")
+    .map((line) => {
+      const match = /^([ \t]*[A-Za-z0-9_-]+):[ \t]+(.*)$/.exec(line);
+      if (!match) return line;
+      const [, key, value] = match;
+      if (value === undefined || key === undefined) return line;
+      const trimmed = value.trim();
+      if (
+        !trimmed.includes(":") ||
+        /^["'>|]/.test(trimmed) ||
+        trimmed.startsWith("[") ||
+        trimmed.startsWith("{")
+      ) {
+        return line;
+      }
+      return `${key}: ${JSON.stringify(trimmed)}`;
+    })
+    .join("\n");
+
+/** Parse the frontmatter block, retrying once with unquoted colon-bearing
+ *  values quoted so skills written for lenient clients still load. */
+const parseFrontmatterYaml = (yaml: string): Result.Result<unknown, InvalidSkillError> => {
+  const strict = tryYaml(yaml);
+  if (Result.isSuccess(strict)) return strict;
+  const quoted = quoteUnquotedScalars(yaml);
+  return quoted === yaml ? strict : tryYaml(quoted);
+};
+
 /**
  * Split a SKILL.md into frontmatter and body and validate the required fields.
  *
@@ -149,10 +193,7 @@ export const parseSkillMarkdown = (
   }
   const { yaml, body } = split.value;
 
-  const parsed = Result.try({
-    try: () => parseYaml(yaml) as unknown,
-    catch: () => new InvalidSkillError({ reason: "SKILL.md frontmatter is not valid YAML." }),
-  });
+  const parsed = parseFrontmatterYaml(yaml);
   if (Result.isFailure(parsed)) return Result.fail(parsed.failure);
   const frontmatter = parsed.success;
   if (!isRecord(frontmatter)) {
