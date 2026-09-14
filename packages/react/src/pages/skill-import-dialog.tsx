@@ -149,7 +149,7 @@ export function SkillImportDialog(props: {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           {error ? <FormErrorAlert message={error} /> : null}
 
           <div className="space-y-1.5">
@@ -182,7 +182,7 @@ export function SkillImportDialog(props: {
           </div>
 
           {found ? (
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               <div className="flex items-baseline justify-between">
                 <h3 className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                   Found in {found.source}
@@ -192,11 +192,14 @@ export function SkillImportDialog(props: {
               </div>
 
               {found.skills.length > 0 ? (
-                <ul className="max-h-72 divide-y divide-border overflow-auto rounded-lg border border-border bg-card">
+                <ul className="max-h-72 min-w-0 divide-y divide-border overflow-auto rounded-lg border border-border bg-card">
                   {found.skills.map((skill) => {
                     const id = `import-${skill.directory || "root"}`;
                     return (
-                      <li key={skill.directory} className="flex items-start gap-3 px-3 py-2.5">
+                      <li
+                        key={skill.directory}
+                        className="flex min-w-0 items-start gap-3 px-3 py-2.5"
+                      >
                         <Checkbox
                           id={id}
                           checked={picked.has(skill.directory)}
@@ -207,17 +210,19 @@ export function SkillImportDialog(props: {
                           htmlFor={id}
                           className="min-w-0 flex-1 cursor-pointer flex-col items-start gap-0"
                         >
-                          <span className="flex items-center gap-2">
-                            <span className="font-mono text-sm text-foreground">{skill.name}</span>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate font-mono text-sm text-foreground">
+                              {skill.name}
+                            </span>
                             <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                               {skill.files.length} {skill.files.length === 1 ? "file" : "files"}
                             </span>
                           </span>
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                          <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
                             {skill.description}
                           </span>
                           {skill.directory ? (
-                            <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground/70">
+                            <span className="mt-0.5 block truncate font-mono text-[11px] font-normal text-muted-foreground/70">
                               {skill.directory}
                             </span>
                           ) : null}
