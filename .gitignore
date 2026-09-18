@@ -18,7 +18,11 @@ coverage
 # logs
 logs
 _.log
+*.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# Vite/portless preview output from `bun run dev`
+.preview/
 
 # dotenv environment variable files
 .env
