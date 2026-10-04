@@ -149,6 +149,10 @@ export interface McpSession {
    *  an MCP client actually reads (e.g. the execute tool's inventory). */
   readonly describeTools: () => Effect.Effect<ReadonlyArray<McpToolDef>>;
   readonly call: (name: string, args?: Record<string, unknown>) => Effect.Effect<McpCallResult>;
+  /** Read an MCP resource through the same authenticated client as tools/call. */
+  readonly readResource: (
+    uri: string,
+  ) => Effect.Effect<Awaited<ReturnType<Client["readResource"]>>>;
   /** Find the paused executionId in `text` and resume it with approval. */
   readonly approvePaused: (
     text: string,
@@ -361,6 +365,7 @@ export const makeMcpSurface = (target: Target, runDir?: string): McpSurface => (
 
       return {
         listTools,
+        readResource: (uri) => Effect.promise(async () => (await client()).readResource({ uri })),
         describeTools: () =>
           Effect.promise(async (): Promise<ReadonlyArray<McpToolDef>> => {
             const listed = await (await client()).listTools();
@@ -467,6 +472,19 @@ export const makeMcpSurface = (target: Target, runDir?: string): McpSurface => (
 
     return {
       listTools,
+      readResource: (uri) =>
+        Effect.promise(async () => {
+          const rt = await runtime();
+          if (!connected) {
+            await rt.listTools(serverName, callOptions);
+            connected = true;
+          }
+          const context = await rt.connect(serverName, {
+            allowCachedAuth: true,
+            oauthSessionOptions: callOptions.oauthSessionOptions,
+          });
+          return context.client.readResource({ uri });
+        }),
       describeTools,
       call,
       approvePaused: (text, content = {}) =>

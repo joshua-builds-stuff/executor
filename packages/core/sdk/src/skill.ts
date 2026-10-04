@@ -20,10 +20,11 @@ import type { SkillRow } from "./core-schema";
 import { InvalidSkillError } from "./errors";
 import { SkillName, type Owner } from "./ids";
 
-/** One file as uploaded: a relative POSIX path and its UTF-8 text. */
+/** One file as uploaded: UTF-8 text, or base64-encoded binary bytes. */
 export interface SkillFileInput {
   readonly path: string;
   readonly content: string;
+  readonly encoding?: "base64";
 }
 
 /** One file in a skill's manifest: what the MCP Skills Extension lists. */
@@ -36,7 +37,7 @@ export interface SkillFileEntry {
   readonly digest: string;
 }
 
-export type SkillFile = SkillFileEntry & { readonly content: string };
+export type SkillFile = SkillFileEntry & SkillFileInput;
 
 export interface SkillSummary {
   readonly owner: Owner;
@@ -72,15 +73,15 @@ export interface SkillRef {
 
 export const SKILL_MD_PATH = "SKILL.md";
 /** Files per skill, SKILL.md included. */
-export const SKILL_MAX_FILES = 64;
-/** Total UTF-8 bytes across every file of one skill. */
-export const SKILL_MAX_TOTAL_BYTES = 1024 * 1024;
+export const SKILL_MAX_FILES = 2048;
+/** Total decoded bytes across every file of one skill. */
+export const SKILL_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 export const SKILL_NAME_MAX_LENGTH = 64;
 export const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
 export const SKILL_COMPATIBILITY_MAX_LENGTH = 500;
 
-/** Names the MCP `skills` tool already answers with Executor's own docs; a
- *  workspace skill under one of them would be unreachable by name. */
+/** Names the MCP `skills` tool already answers with Executor's own docs;
+ *  saved skills with these names require an explicit `owner/name` tool call. */
 export const SKILL_RESERVED_NAMES: ReadonlySet<string> = new Set([
   "execute",
   "search-invoke",
@@ -206,9 +207,6 @@ export const parseSkillMarkdown = (
       "Frontmatter `name` must be 1–64 characters of lowercase letters, digits, and single hyphens, and cannot start or end with a hyphen.",
     );
   }
-  if (SKILL_RESERVED_NAMES.has(name)) {
-    return invalid(`\`${name}\` is reserved for Executor's built-in docs; choose another name.`);
-  }
   const description = frontmatter.description;
   if (typeof description !== "string" || description.trim().length === 0) {
     return invalid("Frontmatter `description` is required and must be a non-empty string.");
@@ -266,6 +264,12 @@ const toHex = (bytes: ArrayBuffer): string =>
 export const digestSkillContent = async (content: string): Promise<string> =>
   `sha256:${toHex(await crypto.subtle.digest("SHA-256", encoder.encode(content)))}`;
 
+const digestSkillBytes = async (bytes: Uint8Array): Promise<string> => {
+  const copy = new Uint8Array(new ArrayBuffer(bytes.byteLength));
+  copy.set(bytes);
+  return `sha256:${toHex(await crypto.subtle.digest("SHA-256", copy))}`;
+};
+
 export const skillContentByteLength = (content: string): number =>
   encoder.encode(content).byteLength;
 
@@ -321,13 +325,29 @@ export const prepareSkillFiles = async (
   }
   const skillMd = inputs.find((file) => file.path === SKILL_MD_PATH);
   if (!skillMd) return invalid("A skill must contain a SKILL.md file at its root.");
+  if (skillMd.encoding) return invalid("SKILL.md must be UTF-8 text, not base64-encoded binary.");
   const parsed = parseSkillMarkdown(skillMd.content);
   if (Result.isFailure(parsed)) return Result.fail(parsed.failure);
 
   let total = 0;
   const files: SkillFile[] = [];
   for (const file of [...inputs].sort(compareSkillPaths)) {
-    const size = skillContentByteLength(file.content);
+    // Only the encoded form is persisted; manifests always hash and size the
+    // actual bytes served through MCP resources/read, never the base64 text.
+    if (file.encoding && file.encoding !== "base64") {
+      return invalid(`Unsupported encoding for file "${file.path}".`);
+    }
+    if (
+      file.encoding === "base64" &&
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.content)
+    ) {
+      return invalid(`File "${file.path}" is not valid standard base64.`);
+    }
+    const bytes =
+      file.encoding === "base64"
+        ? Uint8Array.from(atob(file.content), (char) => char.charCodeAt(0))
+        : encoder.encode(file.content);
+    const size = bytes.byteLength;
     total += size;
     if (total > SKILL_MAX_TOTAL_BYTES) {
       return invalid(`A skill's files can total at most ${SKILL_MAX_TOTAL_BYTES} bytes.`);
@@ -335,8 +355,9 @@ export const prepareSkillFiles = async (
     files.push({
       path: file.path,
       content: file.content,
+      ...(file.encoding ? { encoding: file.encoding } : {}),
       size,
-      digest: await digestSkillContent(file.content),
+      digest: await digestSkillBytes(bytes),
     });
   }
   return Result.succeed({ parsed: parsed.success, files });
@@ -354,7 +375,10 @@ export const SKILL_URI_SCHEME = "skill://";
 export const skillRootUri = (ref: SkillRef): string =>
   `${SKILL_URI_SCHEME}${ref.owner}/${ref.name}`;
 
-export const skillFileUri = (ref: SkillRef, path: string): string => `${skillRootUri(ref)}/${path}`;
+/** Encode each path segment so URL parsers preserve Unicode, spaces, and
+ *  reserved characters without mistaking them for URI syntax. */
+export const skillFileUri = (ref: SkillRef, path: string): string =>
+  `${skillRootUri(ref)}/${path.split("/").map(encodeURIComponent).join("/")}`;
 
 export interface ParsedSkillUri extends SkillRef {
   /** Empty for the skill root directory. */
@@ -368,7 +392,22 @@ export const parseSkillUri = (uri: string): Option.Option<ParsedSkillUri> => {
   if ((owner !== "org" && owner !== "user") || name === undefined || !isValidSkillName(name)) {
     return Option.none();
   }
-  const path = pathSegments.join("/");
+  // ResourceTemplate hands readers URL.toString(), which percent-encodes the
+  // path. Decode only canonical, segment-local escapes (never encoded slashes
+  // or backslashes) before addressing the stored relative file path.
+  const decoded = pathSegments.map((segment) => {
+    // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: malformed percent escapes must fail URI parsing without throwing
+    try {
+      const value = decodeURIComponent(segment);
+      return encodeURIComponent(value) === segment && !value.includes("/") && !value.includes("\\")
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  });
+  if (decoded.some((segment) => segment === null)) return Option.none();
+  const path = decoded.join("/");
   if (path.length > 0 && !isValidSkillFilePath(path)) return Option.none();
   return Option.some({ owner, name, path });
 };
@@ -383,6 +422,7 @@ export const parseSkillUri = (uri: string): Option.Option<ParsedSkillUri> => {
 const StoredSkillFile = Schema.Struct({
   path: Schema.String,
   content: Schema.String,
+  encoding: Schema.optional(Schema.Literal("base64")),
   size: Schema.Number,
   digest: Schema.String,
 });

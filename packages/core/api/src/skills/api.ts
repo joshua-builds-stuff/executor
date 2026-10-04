@@ -30,6 +30,7 @@ const SkillFileEntryResponse = Schema.Struct({
 const SkillFileResponse = Schema.Struct({
   ...SkillFileEntryResponse.fields,
   content: Schema.String,
+  encoding: Schema.optional(Schema.Literal("base64")),
 });
 
 /** What a list returns: the manifest without file contents. */
@@ -51,6 +52,7 @@ export const SkillResponse = Schema.Struct({
 const SkillFileInputSchema = Schema.Struct({
   path: Schema.String,
   content: Schema.String,
+  encoding: Schema.optional(Schema.Literal("base64")),
 });
 
 /** Create or replace: the skill's name is read from `SKILL.md`. */

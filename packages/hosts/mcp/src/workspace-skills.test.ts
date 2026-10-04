@@ -5,7 +5,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import * as z from "zod/v4";
 import type * as Cause from "effect/Cause";
 
-import { SkillName, SkillNotFoundError, type Skill, type SkillSummary } from "@executor-js/sdk";
+import {
+  SkillName,
+  SkillNotFoundError,
+  skillFileUri,
+  type Skill,
+  type SkillSummary,
+} from "@executor-js/sdk";
 import type { ExecutionEngine } from "@executor-js/execution";
 
 import { createExecutorMcpServer } from "./tool-server";
@@ -204,6 +210,86 @@ describe("skills tool with workspace skills", () => {
       });
       expect(bad.isError).toBe(true);
     });
+  });
+
+  it("reaches a skill whose name collides with a built-in guide by qualified name", async () => {
+    await withClient(portOf([skill("org", "create-artifact")]), async (client) => {
+      expect(
+        textOf(await client.callTool({ name: "skills", arguments: { name: "create-artifact" } })),
+      ).toContain("## Workflow");
+      expect(
+        textOf(
+          await client.callTool({ name: "skills", arguments: { name: "org/create-artifact" } }),
+        ),
+      ).toContain('<skill_content name="create-artifact"');
+    });
+  });
+
+  it("returns binary files as MCP blobs, not base64 text", async () => {
+    const original = skill("org");
+    const binary = {
+      path: "assets/logo.png",
+      content: "AP+ACg==",
+      encoding: "base64" as const,
+      size: 4,
+      digest: `sha256:${"c".repeat(64)}`,
+    };
+    await withClient(
+      portOf([{ ...original, files: [...original.files, binary] }]),
+      async (client) => {
+        const uri = "skill://org/pdf-processing/assets/logo.png";
+        const result = await client.readResource({ uri });
+        expect(result.contents[0]).toMatchObject({
+          uri,
+          mimeType: "application/octet-stream",
+          blob: binary.content,
+        });
+        const entry = await client.request({ method: "skills/list", params: {} }, SkillsListResult);
+        expect(entry.skills[0]?.resources).toContainEqual({
+          uri,
+          digest: binary.digest,
+          size: binary.size,
+        });
+        const tool = await client.callTool({
+          name: "skills",
+          arguments: { name: "org/pdf-processing", file: binary.path },
+        });
+        expect(textOf(tool)).toContain("binary asset");
+        expect(textOf(tool)).not.toContain(binary.content);
+      },
+    );
+  });
+
+  it("lists and reads a Unicode filename with URI-reserved characters", async () => {
+    const original = skill("org");
+    const path = "references/文件 #1%.md";
+    const text = "# Unicode reference\n";
+    await withClient(
+      portOf([
+        {
+          ...original,
+          files: [
+            ...original.files,
+            {
+              path,
+              content: text,
+              size: Buffer.byteLength(text),
+              digest: `sha256:${"d".repeat(64)}`,
+            },
+          ],
+        },
+      ]),
+      async (client) => {
+        const uri = skillFileUri(original, path);
+        const listed = await client.request(
+          { method: "skills/list", params: {} },
+          SkillsListResult,
+        );
+        expect(listed.skills[0]?.resources.some((file) => file.uri === uri)).toBe(true);
+        const result = await client.readResource({ uri });
+        expect(result.contents[0]).toMatchObject({ uri, text });
+      },
+    );
   });
 
   it("names both sections on a miss", async () => {

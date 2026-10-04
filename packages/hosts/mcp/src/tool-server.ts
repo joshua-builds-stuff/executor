@@ -31,6 +31,7 @@ import {
   isToolResult,
   makeOrgWriteAccessState,
   sanitizeArtifactPreviewMarkup,
+  skillFileUri,
   type OrgWriteAccess,
 } from "@executor-js/sdk";
 import type {
@@ -1020,7 +1021,7 @@ const workspaceSkillsResult = (
     const file = input.file?.trim();
     if (!name) return textResult(index());
 
-    const builtIn = findSkill(name, catalog);
+    const builtIn = name.includes("/") ? undefined : findSkill(name, catalog);
     if (builtIn) {
       if (file) {
         return textResult(
@@ -1056,6 +1057,10 @@ const workspaceSkillsResult = (
           true,
         );
       }
+      if (found.encoding === "base64")
+        return textResult(
+          `"${file}" is a binary asset. Read ${skillFileUri(skill, file)} with MCP resources/read to receive its base64 bytes.`,
+        );
       return textResult(found.content);
     }
     return textResult(renderWorkspaceSkill(skill));

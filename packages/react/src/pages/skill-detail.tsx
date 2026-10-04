@@ -42,6 +42,7 @@ interface SkillFileRow {
   readonly size: number;
   readonly digest: string;
   readonly content: string;
+  readonly encoding?: "base64";
 }
 
 const BackLink = () => (
@@ -89,9 +90,15 @@ function SkillFileEntry(props: { readonly file: SkillFileRow }) {
           {file.size} B
         </span>
       </summary>
-      <pre className="mt-2.5 max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground">
-        {file.content}
-      </pre>
+      {file.encoding === "base64" ? (
+        <p className="mt-2.5 text-xs text-muted-foreground">
+          Binary asset; read the MCP resource to retrieve its bytes.
+        </p>
+      ) : (
+        <pre className="mt-2.5 max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground">
+          {file.content}
+        </pre>
+      )}
     </details>
   );
 }

@@ -171,10 +171,10 @@ export const renderWorkspaceSkill = (skill: Skill): string => {
 // MCP Skills Extension (SEP-2640)
 // ---------------------------------------------------------------------------
 
-/** MIME type for a skill file, by extension. Markdown is what the standard is
- *  made of; everything else is served as plain text. */
-export const skillFileMimeType = (path: string): string =>
-  path.endsWith(".md") ? "text/markdown" : "text/plain";
+/** MIME type for a skill file. Explicit binary content is served as a blob,
+ *  while UTF-8 files use markdown or plain text. */
+export const skillFileMimeType = (path: string, binary = false): string =>
+  binary ? "application/octet-stream" : path.endsWith(".md") ? "text/markdown" : "text/plain";
 
 /** One `skills/list` / `skills/get` entry: the SKILL.md URI, the verbatim
  *  frontmatter, and the complete digest manifest. */
@@ -208,9 +208,8 @@ export type RunAtEdge = <A>(effect: Effect.Effect<A, unknown>) => Promise<A>;
  * server that has already declared the `resources` capability and the
  * extension under `capabilities.extensions`.
  *
- * `skills/list` never paginates: a workspace's catalog is small by
- * construction (each entry is one saved row), and an unpaginated listing is
- * what every client handles.
+ * `skills/list` returns the complete digest index, including large bundles.
+ * File contents are only transferred by resources/read.
  */
 export const registerWorkspaceSkills = (
   server: McpServer,
@@ -268,7 +267,11 @@ export const registerWorkspaceSkills = (
       const file = skill?.files.find((entry) => entry.path === path);
       if (!file) return notFound(href);
       return {
-        contents: [{ uri: href, mimeType: skillFileMimeType(path), text: file.content }],
+        contents: [
+          file.encoding === "base64"
+            ? { uri: href, mimeType: skillFileMimeType(path, true), blob: file.content }
+            : { uri: href, mimeType: skillFileMimeType(path), text: file.content },
+        ],
       };
     },
   );
