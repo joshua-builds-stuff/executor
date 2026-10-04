@@ -66,11 +66,17 @@ describe("parseSkillMarkdown", () => {
     ["leading hyphen", "---\nname: -pdf\ndescription: y\n---\n"],
     ["double hyphen", "---\nname: pdf--x\ndescription: y\n---\n"],
     ["missing description", "---\nname: pdf\n---\n"],
-    ["reserved name", "---\nname: execute\ndescription: y\n---\n"],
-    ["reserved search-invoke name", "---\nname: search-invoke\ndescription: y\n---\n"],
     ["non-string metadata value", "---\nname: pdf\ndescription: y\nmetadata:\n  n: 1\n---\n"],
   ])("rejects %s", (_label, markdown) => {
     expect(Result.isFailure(parseSkillMarkdown(markdown))).toBe(true);
+  });
+
+  it("allows a catalog skill named like a built-in guide, addressed as owner/name", () => {
+    expect(
+      Result.isSuccess(
+        parseSkillMarkdown("---\nname: create-artifact\ndescription: Build an artifact\n---\n"),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -84,6 +90,57 @@ describe("prepareSkillFiles", () => {
       expect(file.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(file.size).toBe(new TextEncoder().encode(file.content).byteLength);
     }
+  });
+
+  it("hashes binary bytes rather than their base64 representation", async () => {
+    const bytes = Uint8Array.of(0, 255, 128, 13, 10);
+    const content = Buffer.from(bytes).toString("base64");
+    const prepared = await prepareSkillFiles([
+      ...files(),
+      { path: "assets/logo.png", content, encoding: "base64" },
+    ]);
+    expect(Result.isSuccess(prepared)).toBe(true);
+    if (Result.isFailure(prepared)) return;
+    const binary = prepared.success.files.find((file) => file.path === "assets/logo.png");
+    expect(binary).toMatchObject({ content, encoding: "base64", size: bytes.byteLength });
+    expect(binary?.digest).toBe(
+      `sha256:${Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex")}`,
+    );
+  });
+
+  it("accepts large, many-file bundles without relaxing path or size validation", async () => {
+    const inputs = [
+      ...files(),
+      ...Array.from({ length: 550 }, (_, n) => ({ path: `references/${n}.md`, content: "x" })),
+      {
+        path: "assets/large.bin",
+        content: Buffer.alloc(1024 * 1024 + 1).toString("base64"),
+        encoding: "base64" as const,
+      },
+    ];
+    const prepared = await prepareSkillFiles(inputs);
+    expect(Result.isSuccess(prepared)).toBe(true);
+    if (Result.isFailure(prepared)) return;
+    expect(prepared.success.files).toHaveLength(inputs.length);
+    expect(
+      Result.isFailure(
+        await prepareSkillFiles([
+          {
+            path: "SKILL.md",
+            content: Buffer.from(SKILL_MD).toString("base64"),
+            encoding: "base64",
+          },
+        ]),
+      ),
+    ).toBe(true);
+    expect(
+      Result.isFailure(
+        await prepareSkillFiles([
+          ...files(),
+          { path: "assets/bad.bin", content: "!!!", encoding: "base64" },
+        ]),
+      ),
+    ).toBe(true);
   });
 
   it.each([
@@ -103,6 +160,21 @@ describe("skill URIs", () => {
     expect(parseSkillUri(uri)).toEqual(
       Option.some({ owner: "org", name: "pdf-processing", path: "references/FORMS.md" }),
     );
+  });
+
+  it("round-trips Unicode and URI-reserved file paths without permitting encoded traversal", () => {
+    const ref = { owner: "org" as const, name: "pdf-processing" };
+    const path = "references/文件 #1%.md";
+    const uri = skillFileUri(ref, path);
+    expect(uri).toContain("/%E6%96%87%E4%BB%B6%20%231%25.md");
+    expect(parseSkillUri(uri)).toEqual(Option.some({ ...ref, path }));
+    expect(
+      Option.isNone(parseSkillUri("skill://org/pdf-processing/references/%2E%2E/secret")),
+    ).toBe(true);
+    expect(Option.isNone(parseSkillUri("skill://org/pdf-processing/references/%2Fsecret"))).toBe(
+      true,
+    );
+    expect(Option.isNone(parseSkillUri("skill://org/pdf-processing/references/%GG"))).toBe(true);
   });
 
   it("rejects other schemes, unknown owners, and escaping paths", () => {
@@ -138,6 +210,21 @@ describe("executor.skills", () => {
         saved.files.map(({ path, size, digest }) => ({ path, size, digest })),
       );
       expect(summary?.frontmatter["unknown-field"]).toBe("kept verbatim");
+    }),
+  );
+
+  it.effect("persists a binary asset through the workspace storage round-trip", () =>
+    Effect.gen(function* () {
+      const executor = yield* makeTestExecutor();
+      const binary = { path: "assets/logo.png", content: "AP+ACg==", encoding: "base64" as const };
+      const saved = yield* executor.skills.save({ owner: "org", files: [...files(), binary] });
+      expect(saved.files.find((file) => file.path === binary.path)).toMatchObject({
+        ...binary,
+        size: 4,
+      });
+      expect((yield* executor.skills.get({ owner: "org", name: "pdf-processing" })).files).toEqual(
+        saved.files,
+      );
     }),
   );
 

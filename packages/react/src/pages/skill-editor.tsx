@@ -49,9 +49,8 @@ Write the instructions an agent should follow here.
 1. ...
 `;
 
-/** Files above this are almost never instructions, and the whole skill is
- *  capped at 1 MiB anyway — better to say which file was dropped than to fail
- *  the save with a total-size error. */
+/** Keep folder uploads bounded for the in-browser text editor. Larger bundles
+ *  and binary assets can still be published through the skills API. */
 const MAX_IMPORT_FILE_BYTES = 512 * 1024;
 
 const SkillErrorReason = Schema.Struct({ reason: Schema.String });
@@ -71,6 +70,7 @@ interface ExtraFileRow {
   readonly id: number;
   readonly path: string;
   readonly content: string;
+  readonly encoding?: "base64";
 }
 
 interface EditorSeed {
@@ -119,6 +119,7 @@ function SkillEditorLoader(props: {
   const files = skill.value.files as ReadonlyArray<{
     readonly path: string;
     readonly content: string;
+    readonly encoding?: "base64";
   }>;
   const skillMd = files.find((file) => file.path === SKILL_MD_PATH);
   return (
@@ -128,7 +129,12 @@ function SkillEditorLoader(props: {
         skillMd: skillMd?.content ?? NEW_SKILL_TEMPLATE,
         extras: files
           .filter((file) => file.path !== SKILL_MD_PATH)
-          .map((file, index) => ({ id: index, path: file.path, content: file.content })),
+          .map((file, index) => ({
+            id: index,
+            path: file.path,
+            content: file.content,
+            encoding: file.encoding,
+          })),
         original: { owner: skill.value.owner, name: skill.value.name },
       }}
     />
@@ -258,7 +264,11 @@ function SkillEditorForm(props: { readonly seed: EditorSeed }) {
           { path: SKILL_MD_PATH, content: skillMd },
           ...extras
             .filter((row) => row.path.trim() !== "")
-            .map((row) => ({ path: row.path.trim(), content: row.content })),
+            .map((row) => ({
+              path: row.path.trim(),
+              content: row.content,
+              ...(row.encoding ? { encoding: row.encoding } : {}),
+            })),
         ],
       },
       reactivityKeys: skillWriteKeys,
@@ -395,13 +405,19 @@ function SkillEditorForm(props: { readonly seed: EditorSeed }) {
                       Remove
                     </Button>
                   </div>
-                  <Textarea
-                    value={row.content}
-                    spellCheck={false}
-                    onChange={(event) => updateRow(row.id, { content: event.target.value })}
-                    className="mt-2 min-h-32 font-mono text-[12px] leading-relaxed"
-                    aria-label={`Contents of ${row.path || "file"}`}
-                  />
+                  {row.encoding === "base64" ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Binary asset — preserved on save. Read its bytes through the MCP resource URI.
+                    </p>
+                  ) : (
+                    <Textarea
+                      value={row.content}
+                      spellCheck={false}
+                      onChange={(event) => updateRow(row.id, { content: event.target.value })}
+                      className="mt-2 min-h-32 font-mono text-[12px] leading-relaxed"
+                      aria-label={`Contents of ${row.path || "file"}`}
+                    />
+                  )}
                 </li>
               ))}
             </ul>

@@ -14,7 +14,8 @@ import { composePluginApi } from "@executor-js/api/server";
 import { SkillName } from "@executor-js/sdk/shared";
 
 import { scenario } from "../src/scenario";
-import { Api, Mcp, Target } from "../src/services";
+import { Api, Browser, Mcp, Target } from "../src/services";
+import { visit } from "../src/surfaces/browser";
 
 const api = composePluginApi([] as const);
 
@@ -43,6 +44,7 @@ scenario(
   Effect.gen(function* () {
     const target = yield* Target;
     const mcp = yield* Mcp;
+    const browser = yield* Browser;
     const { client: apiClient } = yield* Api;
 
     const identity = yield* target.newIdentity();
@@ -53,6 +55,7 @@ scenario(
     const name = SkillName.make(`release-notes-${suffix}`);
     const marker = `skill-ok-${suffix}`;
     const toneMarker = `tone-ok-${suffix}`;
+    const image = Buffer.from([0, 255, 128, 10]);
 
     yield* Effect.gen(function* () {
       // Save through the same endpoint the console's editor uses.
@@ -62,6 +65,7 @@ scenario(
           files: [
             { path: "SKILL.md", content: skillMarkdown(name, marker) },
             { path: "references/tone.md", content: `# Tone\n\nPlain and direct. ${toneMarker}` },
+            { path: "assets/logo.png", content: image.toString("base64"), encoding: "base64" },
           ],
         },
       });
@@ -69,12 +73,18 @@ scenario(
       expect(
         saved.files.map((file) => file.path),
         "SKILL.md leads the stored manifest",
-      ).toEqual(["SKILL.md", "references/tone.md"]);
+      ).toEqual(["SKILL.md", "assets/logo.png", "references/tone.md"]);
       for (const file of saved.files) {
         expect(file.digest, `${file.path} carries a sha256 digest`).toMatch(
           /^sha256:[0-9a-f]{64}$/,
         );
       }
+      const binary = saved.files.find((file) => file.path === "assets/logo.png");
+      expect(binary?.size, "binary manifests count decoded bytes").toBe(image.byteLength);
+      expect(binary?.encoding, "the stored file remains binary").toBe("base64");
+      expect(binary?.content, "the stored bytes survive the API round-trip").toBe(
+        image.toString("base64"),
+      );
 
       // A fresh MCP session sees the skill in the tool's own description — the
       // catalog a model reads before it asks for anything.
@@ -104,6 +114,27 @@ scenario(
       const tone = yield* session.call("skills", { name, file: "references/tone.md" });
       expect(tone.ok, `reading a bundled file succeeds: ${tone.text}`).toBe(true);
       expect(tone.text, "the bundled file's content is returned verbatim").toContain(toneMarker);
+      const asset = yield* session.call("skills", { name, file: "assets/logo.png" });
+      expect(
+        asset.text,
+        "binary assets are read through MCP resources, not pasted into a tool result",
+      ).toContain("resources/read");
+      const resource = yield* session.readResource(`skill://user/${name}/assets/logo.png`);
+      expect(resource.contents[0], "MCP serves the exact binary file as a blob").toMatchObject({
+        blob: image.toString("base64"),
+        mimeType: "application/octet-stream",
+      });
+
+      yield* browser.session(identity, async ({ page, step }) => {
+        await step("Open the saved skill and inspect its binary asset", async () => {
+          await visit(page, `/skills/user/${name}`);
+          await page.getByText("assets/logo.png").click();
+          await page
+            .getByText("Binary asset; read the MCP resource to retrieve its bytes.")
+            .waitFor();
+          expect(await page.getByText(image.toString("base64")).count()).toBe(0);
+        });
+      });
 
       // Delete in the console; the agent's next call misses.
       yield* client.skills.remove({ params: { owner: "user", name } });
