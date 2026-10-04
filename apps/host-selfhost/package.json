@@ -34,6 +34,7 @@
     "@executor-js/plugin-mcp": "workspace:*",
     "@executor-js/plugin-openapi": "workspace:*",
     "@executor-js/plugin-provider-service-split": "workspace:*",
+    "@executor-js/plugin-skills-folder": "workspace:*",
     "@executor-js/plugin-toolkits": "workspace:*",
     "@executor-js/react": "workspace:*",
     "@executor-js/runtime-quickjs": "workspace:*",

@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -13,10 +18,12 @@ import {
   type SkillSummary,
 } from "@executor-js/sdk";
 import type { ExecutionEngine } from "@executor-js/execution";
+import { skillsFolderSource } from "@executor-js/plugin-skills-folder";
 
 import { createExecutorMcpServer } from "./tool-server";
 import {
   MCP_SKILLS_EXTENSION_ID,
+  mergeMcpSkillSources,
   resolveWorkspaceSkill,
   type McpSkillsPort,
 } from "./workspace-skills";
@@ -133,6 +140,136 @@ describe("resolveWorkspaceSkill", () => {
   it("honours an explicit owner", () => {
     expect(resolveWorkspaceSkill("org/pdf-processing", both)?.owner).toBe("org");
     expect(resolveWorkspaceSkill("user/nope", both)).toBeUndefined();
+  });
+});
+
+describe("plugin skill sources", () => {
+  it("serves a folder over the existing MCP connection and observes add, edit, and removal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "executor-mcp-folder-"));
+    const directory = join(root, "skills", "devops", "folder-example");
+    const manifestPath = join(root, "catalog-manifest.json");
+    const document = Buffer.from([0, 1, 2, 255]);
+    const digest = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+    const markdown = (description: string) =>
+      Buffer.from(
+        `---\nname: folder-example\ndescription: ${description}\n---\n\n# Folder example\n`,
+      );
+    const row = {
+      category: "devops",
+      name: "folder-example",
+      files: [] as Array<{ path: string; size: number; digest: string }>,
+    };
+    const manifest = { schema_version: "1.0.0", skills: [row] };
+    const publish = () => writeFile(manifestPath, JSON.stringify(manifest));
+    const update = async (description: string) => {
+      const body = markdown(description);
+      await writeFile(join(directory, "SKILL.md"), body);
+      row.files[0] = { path: "SKILL.md", size: body.length, digest: digest(body) };
+      await publish();
+    };
+    // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: test fixture must be removed on failure
+    try {
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, "diagram.png"), document);
+      await update("Original folder version.");
+      row.files.push({ path: "diagram.png", size: document.length, digest: digest(document) });
+      await publish();
+      const merged = mergeMcpSkillSources(portOf([skill("user"), skill("org", "saved-only")]), [
+        skillsFolderSource(root),
+      ]);
+      await withClient(merged, async (client) => {
+        const before = await client.request(
+          { method: "skills/list", params: {} },
+          SkillsListResult,
+        );
+        expect(before.skills.map((entry) => entry.uri)).toEqual([
+          "skill://user/pdf-processing/SKILL.md",
+          "skill://org/folder-example/SKILL.md",
+        ]);
+        const uri = "skill://org/folder-example/diagram.png";
+        const binary = await client.readResource({ uri });
+        expect(binary.contents[0]).toMatchObject({ blob: document.toString("base64") });
+        const loaded = await client.callTool({
+          name: "skills",
+          arguments: { name: "org/folder-example" },
+        });
+        expect(textOf(loaded)).toContain("# Folder example");
+        await update("Revised on the same connection.");
+        const revised = await client.request(
+          { method: "skills/list", params: {} },
+          SkillsListResult,
+        );
+        expect(revised.skills[1]?.resources[0]?.digest).not.toBe(
+          before.skills[1]?.resources[0]?.digest,
+        );
+        expect(revised.skills[1]?.frontmatter.description).toBe("Revised on the same connection.");
+        manifest.skills = [];
+        await publish();
+        const removed = await client.request(
+          { method: "skills/list", params: {} },
+          SkillsListResult,
+        );
+        expect(removed.skills.map((entry) => entry.uri)).toEqual([
+          "skill://user/pdf-processing/SKILL.md",
+        ]);
+        await expect(client.readResource({ uri })).rejects.toThrow();
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("replaces a saved org scope without resurrecting deleted folder skills", async () => {
+    const folderSkills = [skill("org")];
+    const folder = { ...portOf(folderSkills), replacesSavedOwners: ["org"] as const };
+    const combined = mergeMcpSkillSources(
+      portOf([skill("org"), skill("org", "saved-only"), skill("user")]),
+      [folder],
+    );
+    expect(
+      (await Effect.runPromise(combined.list())).map((entry) => `${entry.owner}/${entry.name}`),
+    ).toEqual(["user/pdf-processing", "org/pdf-processing"]);
+    folderSkills.splice(0);
+    expect(
+      (await Effect.runPromise(combined.list())).map((entry) => `${entry.owner}/${entry.name}`),
+    ).toEqual(["user/pdf-processing"]);
+    await expect(
+      Effect.runPromise(combined.get({ owner: "org", name: "pdf-processing" })),
+    ).rejects.toThrow();
+    expect(
+      (await Effect.runPromise(combined.get({ owner: "user", name: "pdf-processing" }))).owner,
+    ).toBe("user");
+  });
+
+  it("preserves saved personal skills and prefers a configured folder over a saved org copy", async () => {
+    const savedOrg = skill("org");
+    const pluginOrg = {
+      ...skill("org"),
+      description: "Loaded from a folder",
+      files: skill("org").files.map((file) =>
+        file.path === "SKILL.md" ? { ...file, digest: `sha256:${"c".repeat(64)}` } : file,
+      ),
+    };
+    const combined = mergeMcpSkillSources(portOf([savedOrg, skill("user")]), [portOf([pluginOrg])]);
+    const entries = await Effect.runPromise(combined.list());
+    expect(entries).toHaveLength(2);
+    expect(entries.find((entry) => entry.owner === "org")?.description).toBe(
+      "Loaded from a folder",
+    );
+    expect(
+      (await Effect.runPromise(combined.get({ owner: "org", name: savedOrg.name }))).description,
+    ).toBe("Loaded from a folder");
+    expect(
+      (await Effect.runPromise(combined.get({ owner: "user", name: savedOrg.name }))).owner,
+    ).toBe("user");
+  });
+
+  it("refuses two configured plugins claiming the same skill", async () => {
+    const combined = mergeMcpSkillSources(portOf([]), [
+      portOf([skill("org")]),
+      portOf([skill("org")]),
+    ]);
+    await expect(Effect.runPromise(combined.list())).rejects.toThrow("Conflicting MCP skill");
   });
 });
 

@@ -103,6 +103,7 @@ import {
   rowToSkill,
   toSkillSummary,
   prepareSkillFiles,
+  type McpSkillSource,
   type SaveSkillInput,
   type Skill,
   type SkillRef,
@@ -582,6 +583,9 @@ export type Executor<TPlugins extends readonly AnyPlugin[] = readonly []> = {
     ) => Effect.Effect<Skill, InvalidSkillError | OrgWriteDeniedError | StorageFailure>;
     readonly remove: (ref: SkillRef) => Effect.Effect<void, OrgWriteDeniedError | StorageFailure>;
   };
+
+  /** Read-only plugin skill sources for the MCP host, separate from saved skills. */
+  readonly mcpSkillSources: readonly McpSkillSource[];
 
   /**
    * Approvals recorded for artifact-originated calls that paused on a human.
@@ -2334,6 +2338,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = rea
     };
 
     const extensions: Record<string, object> = {};
+    const mcpSkillSources: McpSkillSource[] = [];
 
     // ------------------------------------------------------------------
     // Owner condition builders. The owner policy already restricts reads to
@@ -7245,6 +7250,8 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = rea
         }
       }
 
+      if (plugin.mcpSkills) mcpSkillSources.push(plugin.mcpSkills(ctx));
+
       // Build extension FIRST so it's available as `self` for staticIntegrations.
       const extension: object = plugin.extension ? plugin.extension(ctx) : {};
       if (plugin.extension) {
@@ -7564,6 +7571,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = rea
         save: skillsSave,
         remove: skillsRemove,
       },
+      mcpSkillSources,
       pendingApprovals,
       execute,
       close,

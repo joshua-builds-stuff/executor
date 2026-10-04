@@ -12,6 +12,10 @@
       "types": "./src/tool-server.ts",
       "default": "./src/tool-server.ts"
     },
+    "./workspace-skills": {
+      "types": "./src/workspace-skills.ts",
+      "default": "./src/workspace-skills.ts"
+    },
     "./create-artifact": {
       "types": "./src/create-artifact.ts",
       "default": "./src/create-artifact.ts"
@@ -54,6 +58,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@executor-js/plugin-skills-folder": "workspace:*",
     "@types/node": "catalog:",
     "bun-types": "catalog:",
     "vitest": "catalog:"

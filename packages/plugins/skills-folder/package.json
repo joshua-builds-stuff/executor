@@ -1,0 +1,23 @@
+{
+  "name": "@executor-js/plugin-skills-folder",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@executor-js/sdk": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "bun-types": "catalog:",
+    "vitest": "catalog:"
+  }
+}
