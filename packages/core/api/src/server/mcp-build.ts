@@ -7,6 +7,7 @@ import {
   type McpBuildServerOptions,
 } from "@executor-js/host-mcp/in-memory-session-store";
 import { createExecutorMcpServer } from "@executor-js/host-mcp/tool-server";
+import { mergeMcpSkillSources } from "@executor-js/host-mcp/workspace-skills";
 import {
   artifactUrlFor,
   type ArtifactSmokeRenderResult,
@@ -70,7 +71,7 @@ export const makeMcpBuildServer =
         createExecutorMcpServer({
           engine,
           artifacts: executor.artifacts,
-          skills: executor.skills,
+          skills: mergeMcpSkillSources(executor.skills, executor.mcpSkillSources),
           connections: executor.connections,
           tools: executor.tools,
           integrations: executor.integrations,

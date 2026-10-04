@@ -1,10 +1,9 @@
 // ---------------------------------------------------------------------------
 // Workspace skills on the MCP surface.
 //
-// A workspace skill is an Agent Skill (a SKILL.md directory, see
-// https://agentskills.io) saved to Executor by a user, personally or for the
-// whole org. Every agent connected to this server should be able to find and
-// load it, so it is served two ways:
+// An Agent Skill (a SKILL.md directory, see https://agentskills.io) can be
+// saved by a user or supplied by a configured read-only plugin. Every agent
+// connected to this server should be able to find and load it in two ways:
 //
 //   1. Through the `skills` tool, alongside Executor's own how-to docs. Every
 //      MCP client can call a tool today, so this is the channel that works
@@ -15,11 +14,11 @@
 //      with digest manifests, and serves every file as a `skill://` resource.
 //      Clients that adopt the standard pick skills up with no tool call at all.
 //
-// Both channels read the same live source (`executor.skills`), so a skill saved
-// in the console is visible to an already-connected agent on its next call.
+// Both channels read the same merged live catalog, so saved edits and folder
+// updates are visible to an already-connected agent on its next call.
 // ---------------------------------------------------------------------------
 
-import { Effect, Option } from "effect";
+import { Data, Effect, Option } from "effect";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
@@ -35,16 +34,71 @@ import {
   type SkillFileEntry,
   type SkillRef,
   type SkillSummary,
+  type McpSkillSource,
+  SkillName,
+  SkillNotFoundError,
 } from "@executor-js/sdk";
 
 /**
  * The two reads this surface needs. Structurally satisfied by
- * `executor.skills`; hosts pass that so the whole `Executor` never crosses this
- * boundary. Both are LIVE: nothing here caches skill content.
+ * `executor.skills` or a plugin source; hosts pass a merged port so the whole
+ * `Executor` never crosses this boundary. Nothing here caches skill content.
  */
-export type McpSkillsPort = {
-  readonly list: () => Effect.Effect<readonly SkillSummary[], unknown>;
-  readonly get: (ref: SkillRef) => Effect.Effect<Skill, unknown>;
+export type McpSkillsPort = McpSkillSource;
+
+class ConflictingMcpSkillError extends Data.TaggedError("ConflictingMcpSkillError")<{
+  readonly message: string;
+}> {}
+
+/** Combine saved and plugin catalogs. A plugin may replace all saved skills in
+ * a declared owner scope: otherwise a folder deletion would resurrect the
+ * previous DB copy. Saved entries stay in the DB for rollback. Personal skills
+ * remain unless a plugin explicitly claims that scope. */
+export const mergeMcpSkillSources = (
+  saved: McpSkillsPort,
+  plugins: readonly McpSkillSource[],
+): McpSkillsPort => {
+  if (plugins.length === 0) return saved;
+  const replacedOwners = new Set(plugins.flatMap((plugin) => plugin.replacesSavedOwners ?? []));
+  const entries = () =>
+    Effect.gen(function* () {
+      const stored = yield* saved.list();
+      const result = new Map<string, { skill: SkillSummary; source: McpSkillsPort }>();
+      const claimed = new Set<string>();
+      const key = (skill: SkillRef) => `${skill.owner}/${skill.name}`;
+      for (const skill of stored) {
+        if (!replacedOwners.has(skill.owner)) result.set(key(skill), { skill, source: saved });
+      }
+      for (const plugin of plugins) {
+        for (const skill of yield* plugin.list()) {
+          const label = key(skill);
+          if (claimed.has(label))
+            return yield* new ConflictingMcpSkillError({
+              message: `Conflicting MCP skill: ${label}`,
+            });
+          claimed.add(label);
+          result.set(label, { skill, source: plugin });
+        }
+      }
+      return result;
+    });
+  return {
+    list: () => Effect.map(entries(), (result) => [...result.values()].map((entry) => entry.skill)),
+    get: (ref) =>
+      Effect.gen(function* () {
+        const result = yield* entries();
+        const match = result.get(`${ref.owner}/${ref.name}`);
+        if (!match) {
+          if (replacedOwners.has(ref.owner))
+            return yield* new SkillNotFoundError({
+              owner: ref.owner,
+              name: SkillName.make(ref.name),
+            });
+          return yield* saved.get(ref);
+        }
+        return yield* match.source.get(ref);
+      }),
+  };
 };
 
 /** The extension id SEP-2640 assigns, as it appears under `capabilities.extensions`. */
@@ -96,8 +150,8 @@ export const SKILL_CATALOG_DESCRIPTION_LIMIT = 40;
 
 /**
  * The `skills` tool description when workspace skills can be served. Replaces
- * the docs-only wording: this IS now a skill reader for the skills saved in
- * Executor, and it says so, while still marking the boundary for skills that
+ * the docs-only wording: this IS now a reader for skills supplied by Executor,
+ * while still marking the boundary for skills that
  * live on the agent's own disk (which it still cannot reach).
  */
 export const renderSkillsToolDescription = (
@@ -108,9 +162,9 @@ export const renderSkillsToolDescription = (
   const hidden = skills.length - shown.length;
   const catalog =
     skills.length === 0
-      ? ["No workspace skills are saved yet; the catalog below is Executor's docs only."]
+      ? ["No workspace skills are available yet; the catalog below is Executor's docs only."]
       : [
-          "Skills saved in this Executor workspace — load one when a task matches its description:",
+          "Skills available in this Executor workspace — load one when a task matches its description:",
           ...shown.map(catalogLine),
           ...(hidden > 0 ? [`- …and ${hidden} more; call with no name for the full index.`] : []),
         ];
@@ -119,7 +173,7 @@ export const renderSkillsToolDescription = (
       ? 'Call `skills({ name: "search-invoke" })` for account discovery, tool search, invocation, and pagination. Call with no name to list everything.'
       : 'Call `skills({ name: "execute" })` for the full guide to writing code for the `execute` tool. Call with no name to list everything.';
   return [
-    "Skills for THIS server: Executor's own how-to docs plus the Agent Skills saved in this Executor workspace. It cannot reach a SKILL.md on your own disk or your harness's skills — only what is listed here.",
+    "Skills for THIS server: Executor's own how-to docs plus Agent Skills saved or configured in this Executor workspace. It cannot reach a SKILL.md on your own disk or your harness's skills — only what is listed here.",
     'Call `skills({ name: "<name>" })` to load a skill\'s instructions; the result lists its bundled files, which you read with `skills({ name, file: "<path>" })`. A name that exists both personally and for the workspace resolves to the personal one; use `owner/name` (`org/<name>` or `user/<name>`) to be explicit.',
     builtInGuide,
     "",
@@ -130,9 +184,9 @@ export const renderSkillsToolDescription = (
 /** The workspace section appended to the `skills` index. */
 export const renderWorkspaceSkillsIndex = (skills: readonly SkillSummary[]): string =>
   skills.length === 0
-    ? "No skills are saved in this Executor workspace yet. Add one in the console under Skills and it appears here for every connected agent."
+    ? "No skills are available in this Executor workspace yet. Add one in the console or configure a skill source."
     : [
-        'Skills saved in this Executor workspace. Load one with `skills({ name: "<name>" })`; read a bundled file with `skills({ name, file: "<path>" })`.',
+        'Skills available in this Executor workspace. Load one with `skills({ name: "<name>" })`; read a bundled file with `skills({ name, file: "<path>" })`.',
         "",
         ...skills.map(catalogLine),
       ].join("\n");
@@ -253,7 +307,7 @@ export const registerWorkspaceSkills = (
       }),
     }),
     {
-      description: "Agent Skills saved in this Executor workspace, one file per resource.",
+      description: "Agent Skills available in this Executor workspace, one file per resource.",
       mimeType: "text/markdown",
     },
     async (uri) => {
@@ -261,10 +315,10 @@ export const registerWorkspaceSkills = (
       const parsed = parseSkillUri(href);
       if (Option.isNone(parsed) || parsed.value.path === "") return notFound(href);
       const { owner, name, path } = parsed.value;
-      const skill = await run(
-        port.get({ owner, name }).pipe(Effect.catchCause(() => Effect.succeed(null))),
-      );
-      const file = skill?.files.find((entry) => entry.path === path);
+      const listed = (await list()).find((entry) => entry.owner === owner && entry.name === name);
+      if (!listed || !listed.files.some((entry) => entry.path === path)) return notFound(href);
+      const skill = await run(port.get({ owner, name }));
+      const file = skill.files.find((entry) => entry.path === path);
       if (!file) return notFound(href);
       return {
         contents: [

@@ -53,6 +53,7 @@ import type {
 import type { OAuthService } from "./oauth-client";
 import type { CredentialProvider, ProviderEntry } from "./provider";
 import type { PluginStorageConfig, PluginStorageFacade } from "./plugin-storage";
+import type { McpSkillSource } from "./skill";
 import type {
   CreateToolPolicyInput,
   DynamicToolScope,
@@ -716,6 +717,11 @@ export interface PluginSpec<
    *  `self` passed to `staticIntegrations`. Field order matters: `extension` MUST
    *  appear before `staticIntegrations`. */
   readonly extension?: (ctx: PluginCtx<TStore>) => TExtension;
+
+  /** Optional read-only Agent Skills source on Executor's existing MCP endpoint.
+   * The host merges it with saved workspace skills. Plugins do not receive an
+   * MCP server or any workspace-skill write capability. */
+  readonly mcpSkills?: (ctx: PluginCtx<TStore>) => McpSkillSource;
 
   /** Static integrations contributed by this plugin with inline tool handlers. */
   readonly staticIntegrations?: (

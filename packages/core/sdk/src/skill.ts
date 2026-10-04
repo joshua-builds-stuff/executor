@@ -13,7 +13,7 @@
 // workspace, a `user` skill is personal. Identity is `(owner, name)`.
 // ---------------------------------------------------------------------------
 
-import { Option, Result, Schema } from "effect";
+import { Effect, Option, Result, Schema } from "effect";
 import { parse as parseYaml } from "yaml";
 
 import type { SkillRow } from "./core-schema";
@@ -65,6 +65,17 @@ export interface SaveSkillInput {
 export interface SkillRef {
   readonly owner: Owner;
   readonly name: string;
+}
+
+/** Read-only Agent Skills catalog contributed by a plugin to the MCP host.
+ * Hosts combine these with the workspace's saved skills; the plugin never needs
+ * write access to the workspace database. */
+export interface McpSkillSource {
+  /** When a plugin owns an entire scope, do not resurrect saved skills omitted
+   * by its current list. Omit for additive plugin catalogs. */
+  readonly replacesSavedOwners?: readonly Owner[];
+  readonly list: () => Effect.Effect<readonly SkillSummary[], unknown>;
+  readonly get: (ref: SkillRef) => Effect.Effect<Skill, unknown>;
 }
 
 // ---------------------------------------------------------------------------

@@ -251,6 +251,7 @@ export {
   type SkillFileEntry,
   type SkillFileInput,
   type SkillRef,
+  type McpSkillSource,
   type SaveSkillInput,
   type ParsedSkillMarkdown,
   type ParsedSkillUri,

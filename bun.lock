@@ -238,6 +238,7 @@
         "@executor-js/plugin-mcp": "workspace:*",
         "@executor-js/plugin-openapi": "workspace:*",
         "@executor-js/plugin-provider-service-split": "workspace:*",
+        "@executor-js/plugin-skills-folder": "workspace:*",
         "@executor-js/plugin-toolkits": "workspace:*",
         "@executor-js/react": "workspace:*",
         "@executor-js/runtime-quickjs": "workspace:*",
@@ -713,6 +714,7 @@
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
+        "@executor-js/plugin-skills-folder": "workspace:*",
         "@types/node": "catalog:",
         "bun-types": "catalog:",
         "vitest": "catalog:",
@@ -1146,6 +1148,20 @@
         "bun-types": "catalog:",
         "tsup": "catalog:",
         "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/plugins/skills-folder": {
+      "name": "@executor-js/plugin-skills-folder",
+      "version": "0.0.1",
+      "dependencies": {
+        "@executor-js/sdk": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "@types/node": "catalog:",
+        "bun-types": "catalog:",
         "vitest": "catalog:",
       },
     },
@@ -1865,6 +1881,8 @@
     "@executor-js/plugin-openapi": ["@executor-js/plugin-openapi@workspace:packages/plugins/openapi"],
 
     "@executor-js/plugin-provider-service-split": ["@executor-js/plugin-provider-service-split@workspace:packages/plugins/provider-service-split"],
+
+    "@executor-js/plugin-skills-folder": ["@executor-js/plugin-skills-folder@workspace:packages/plugins/skills-folder"],
 
     "@executor-js/plugin-toolkits": ["@executor-js/plugin-toolkits@workspace:packages/plugins/toolkits"],
 
