@@ -82,7 +82,7 @@ const runtimeChecks: readonly RuntimeCheck[] = [
     sentinels: ["markStreamUndelivered", "replayUndeliveredResponses"],
   },
   {
-    package: "@modelcontextprotocol/client@2.0.0 (dist/shimsWorkerd.mjs)",
+    package: "@modelcontextprotocol/client@2.3.0 (dist/shimsWorkerd.mjs)",
     purpose:
       "drops the workerd shim's module-eval preloadSchemas() (~15MB heap per isolate; " +
       "collapsed isolate reuse in the 2026-08-25 latency incident) — schemas build lazily",
