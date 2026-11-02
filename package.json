@@ -95,6 +95,13 @@
     "typescript": "^5.9.3",
     "vitest": "catalog:"
   },
+  "overrides": {
+    "dompurify": "^3.4.17",
+    "proxy-addr": "^2.0.8",
+    "seroval": "^1.7.6",
+    "shell-quote": "^1.11.0",
+    "tinypool": "^2.1.2"
+  },
   "packageManager": "bun@1.3.11",
   "catalog": {
     "effect": "4.0.0-beta.59",
@@ -139,6 +146,6 @@
     "agents@0.17.3": "patches/agents@0.17.3.patch",
     "libsql@0.5.29": "patches/libsql@0.5.29.patch",
     "@electric-sql/pglite-socket@0.1.4": "patches/@electric-sql%2Fpglite-socket@0.1.4.patch",
-    "@modelcontextprotocol/client@2.0.0": "patches/@modelcontextprotocol%2Fclient@2.0.0.patch"
+    "@modelcontextprotocol/client@2.3.0": "patches/@modelcontextprotocol%2Fclient@2.3.0.patch"
   }
 }
