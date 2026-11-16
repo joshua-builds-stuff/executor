@@ -169,6 +169,13 @@
       "when": 1793077208148,
       "tag": "0023_wild_gwen_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794868125221,
+      "tag": "0024_skill",
+      "breakpoints": true
     }
   ]
 }
